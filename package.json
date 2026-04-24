@@ -1,0 +1,10 @@
+{
+  "name": "gnos3-remix",
+  "private": true,
+  "version": "0.1.0",
+  "description": "GNOS3 marketing site — static single-page site served as-is.",
+  "scripts": {
+    "dev": "npx --yes serve@latest . -l 4300",
+    "start": "npx --yes serve@latest . -l 4300"
+  }
+}
