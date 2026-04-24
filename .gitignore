@@ -5,3 +5,8 @@ node_modules/
 .idea/
 dist/
 .cache/
+
+# Scratch staging folder used to hand-test files on Station194.
+# Its contents are copies of the real files — keep it out of git
+# so it can't drift.
+_test-upload/
