@@ -1097,6 +1097,25 @@
   .hairline { height: 1px; background: var(--line); width: 100%; }
   .muted { color: var(--fg-3); }
   .mono { font-family: var(--font-mono); }
+
+  /* Contact form: submit states, honeypot, error */
+  .field.hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; opacity: 0; }
+  .form-actions .btn.primary[disabled] { opacity: .65; cursor: wait; }
+  .cf-spinner {
+    display: inline-block; width: 12px; height: 12px; margin-left: 8px;
+    border: 1.5px solid currentColor; border-top-color: transparent;
+    border-radius: 50%; animation: cfSpin .8s linear infinite;
+    vertical-align: -1px;
+  }
+  @keyframes cfSpin { to { transform: rotate(360deg); } }
+  .cf-error {
+    font-size: 12px; letter-spacing: 0.06em;
+    color: oklch(0.72 0.14 28); /* muted red that reads on the dark background */
+    padding: 10px 12px;
+    border: 1px solid oklch(0.72 0.14 28 / 0.35);
+    border-radius: 8px;
+    background: oklch(0.72 0.14 28 / 0.08);
+  }
 </style>
 </head>
 <body data-mode="dark" data-accent="green" data-texture="grid" data-font="geist">
@@ -1509,7 +1528,7 @@
           </div>
         </div>
 
-        <form class="contact-form" onsubmit="event.preventDefault(); this.querySelector('.sent').hidden = false; this.querySelector('.form-body').hidden = true;">
+        <form class="contact-form" id="contactForm" action="contact.php" method="post" novalidate>
           <div class="form-head">
             <span class="mono" style="color: var(--fg-3); font-size: 11px; letter-spacing: 0.18em;">REQUEST / 01</span>
             <span class="mono" style="color: var(--accent); font-size: 11px; letter-spacing: 0.18em;">● OPEN</span>
@@ -1517,23 +1536,23 @@
 
           <div class="form-body">
             <div class="field">
-              <label>Full name</label>
-              <input type="text" placeholder="Jane Doe" required />
+              <label for="cf-name">Full name</label>
+              <input id="cf-name" name="name" type="text" placeholder="Jane Doe" autocomplete="name" required />
             </div>
             <div class="field-row">
               <div class="field">
-                <label>Work email</label>
-                <input type="email" placeholder="jane@company.com" required />
+                <label for="cf-email">Work email</label>
+                <input id="cf-email" name="email" type="email" placeholder="jane@company.com" autocomplete="email" required />
               </div>
               <div class="field">
-                <label>Company</label>
-                <input type="text" placeholder="Acme Legal" />
+                <label for="cf-company">Company</label>
+                <input id="cf-company" name="company" type="text" placeholder="Acme Legal" autocomplete="organization" />
               </div>
             </div>
             <div class="field-row">
               <div class="field">
-                <label>Team size</label>
-                <select>
+                <label for="cf-team">Team size</label>
+                <select id="cf-team" name="team_size">
                   <option>1–10</option>
                   <option>11–50</option>
                   <option>51–200</option>
@@ -1541,8 +1560,8 @@
                 </select>
               </div>
               <div class="field">
-                <label>Use case</label>
-                <select>
+                <label for="cf-use">Use case</label>
+                <select id="cf-use" name="use_case">
                   <option>Legal</option>
                   <option>Medical</option>
                   <option>Finance</option>
@@ -1552,13 +1571,26 @@
               </div>
             </div>
             <div class="field">
-              <label>Anything we should know?</label>
-              <textarea rows="3" placeholder="Corpus size, sensitivity, existing tooling…"></textarea>
+              <label for="cf-notes">Anything we should know?</label>
+              <textarea id="cf-notes" name="notes" rows="3" placeholder="Corpus size, sensitivity, existing tooling…"></textarea>
             </div>
+
+            <!-- Honeypot: real users never see/fill this; bots usually do. -->
+            <div class="field hp" aria-hidden="true">
+              <label for="cf-website">Website</label>
+              <input id="cf-website" name="website" type="text" tabindex="-1" autocomplete="off" />
+            </div>
+            <input type="hidden" name="token" value="gnos3-public-form" />
+
             <div class="form-actions">
-              <button type="submit" class="btn primary">Contact us →</button>
+              <button type="submit" class="btn primary" id="cfSubmit">
+                <span class="cf-label">Contact us →</span>
+                <span class="cf-spinner" hidden></span>
+              </button>
               <span class="mono" style="color: var(--fg-3); font-size: 10px; letter-spacing: 0.14em;">NO NEWSLETTER · NO TRACKING</span>
             </div>
+
+            <div class="cf-error mono" id="cfError" hidden role="alert"></div>
           </div>
 
           <div class="sent" hidden>
@@ -1765,6 +1797,61 @@
   }
   window.addEventListener("scroll", onScroll, { passive: true });
   onScroll();
+
+  // ---------- Contact form: async submit to contact.php ----------
+  const form = document.getElementById("contactForm");
+  if (form) {
+    const submit  = form.querySelector("#cfSubmit");
+    const label   = form.querySelector(".cf-label");
+    const spinner = form.querySelector(".cf-spinner");
+    const errEl   = form.querySelector("#cfError");
+    const body    = form.querySelector(".form-body");
+    const sent    = form.querySelector(".sent");
+
+    function showError(msg) {
+      errEl.textContent = msg;
+      errEl.hidden = false;
+    }
+
+    form.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      errEl.hidden = true;
+
+      if (!form.reportValidity()) return;
+
+      submit.disabled = true;
+      spinner.hidden  = false;
+      label.textContent = "Sending";
+
+      try {
+        const res = await fetch(form.action, {
+          method:  "POST",
+          body:    new FormData(form),
+          headers: { "Accept": "application/json" },
+        });
+
+        let data = null;
+        try { data = await res.json(); } catch { /* non-JSON response */ }
+
+        if (!res.ok || !data || !data.ok) {
+          const msg = (data && data.error) || `Submission failed (HTTP ${res.status}). Please email max@gnos3.com directly.`;
+          showError(msg);
+          submit.disabled = false;
+          spinner.hidden  = true;
+          label.textContent = "Try again →";
+          return;
+        }
+
+        body.hidden = true;
+        sent.hidden = false;
+      } catch (err) {
+        showError("Network error. Please email max@gnos3.com directly.");
+        submit.disabled = false;
+        spinner.hidden  = true;
+        label.textContent = "Try again →";
+      }
+    });
+  }
 })();
 </script>
 </body>
